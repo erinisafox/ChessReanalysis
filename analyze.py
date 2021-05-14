@@ -21,8 +21,8 @@ def generate_stats_string(sample, total):
 def generate_stats_string_csv(sample, total):
     percentage = sample / total
     stderr = std_error(percentage, total)
-    ci = wilson_interval(sample, total)
-    return f'{sample}/{total},{percentage:.01%},{ci[0]*100:.01f} - {ci[1]*100:.01f}'
+    ci = confidence_interval(percentage, stderr)
+    return f'{sample}/{total},{percentage:.01%},{ci[0]*100:.01f},{ci[1]*100:.01f}'
 
 def std_error(p, n):
     return math.sqrt(p*(1-p)/n)
@@ -47,6 +47,21 @@ class PgnSpyResult():
         self.t2_count = 0
         self.t3_total = 0
         self.t3_count = 0
+
+        self.wt1_total = 0
+        self.wt1_count = 0
+        self.wt2_total = 0
+        self.wt2_count = 0
+        self.wt3_total = 0
+        self.wt3_count = 0
+
+        self.bt1_total = 0
+        self.bt1_count = 0
+        self.bt2_total = 0
+        self.bt2_count = 0
+        self.bt3_total = 0
+        self.bt3_count = 0
+		
         self.min_rating = None
         self.max_rating = None
         self.game_list = []
@@ -64,6 +79,22 @@ class PgnSpyResult():
         self.t2_count += other.t2_count
         self.t3_total += other.t3_total
         self.t3_count += other.t3_count
+    	####
+        self.wt1_total += other.wt1_total
+        self.wt1_count += other.wt1_count
+        self.wt2_total += other.wt2_total
+        self.wt2_count += other.wt2_count
+        self.wt3_total += other.wt3_total
+        self.wt3_count += other.wt3_count
+        ####
+        ####
+        self.bt1_total += other.bt1_total
+        self.bt1_count += other.bt1_count
+        self.bt2_total += other.bt2_total
+        self.bt2_count += other.bt2_count
+        self.bt3_total += other.bt3_total
+        self.bt3_count += other.bt3_count
+        ####
         self.with_rating(other.min_rating)
         self.with_rating(other.max_rating)
         self.game_list += other.game_list
@@ -94,6 +125,19 @@ def t_output(fout, result):
         fout.write('T2: {}\n'.format(generate_stats_string(result.t2_count, result.t2_total)))
     if result.t3_total:
         fout.write('T3: {}\n'.format(generate_stats_string(result.t3_count, result.t3_total)))
+    if result.wt1_total:
+        fout.write('WT1: {}\n'.format(generate_stats_string(result.wt1_count, result.wt1_total)))
+    if result.wt2_total:
+        fout.write('WT2: {}\n'.format(generate_stats_string(result.wt2_count, result.wt2_total)))
+    if result.wt3_total:
+        fout.write('WT3: {}\n'.format(generate_stats_string(result.wt3_count, result.wt3_total)))
+    if result.bt1_total:
+        fout.write('BT1: {}\n'.format(generate_stats_string(result.bt1_count, result.bt1_total)))
+    if result.bt2_total:
+        fout.write('BT2: {}\n'.format(generate_stats_string(result.bt2_count, result.bt2_total)))
+    if result.bt3_total:
+        fout.write('BT3: {}\n'.format(generate_stats_string(result.bt3_count, result.bt3_total)))
+    
     if result.acpl:
         fout.write(f'ACPL: {result.acpl:.1f} ({result.sample_size})\n')
     total = result.cp_loss_total
@@ -105,21 +149,24 @@ def t_output(fout, result):
 
 def t_output_csv(fout, result):
     if result.t1_total:
-        fout.write(f'{generate_stats_string_csv(result.t1_count, result.t1_total)},')
+        fout.write(f'{result.t1_count}/{result.t1_total},{result.t1_count / result.t1_total:.1%},')
+        fout.write(f'{result.wt1_count}/{result.wt1_total},{result.wt1_count / result.wt1_total:.1%},')
     else:
-        fout.write(',,,')
+        fout.write('x,x,')
     if result.t2_total:
-        fout.write(f'{generate_stats_string_csv(result.t2_count, result.t2_total)},')
+        fout.write(f'{result.t2_count}/{result.t2_total},{result.t2_count / result.t2_total:.1%},')
+        fout.write(f'{result.wt2_count}/{result.wt2_total},{result.wt2_count / result.wt2_total:.1%},')
     else:
-        fout.write(',,,')
+        fout.write('x,x,')
     if result.t3_total:
-        fout.write(f'{generate_stats_string_csv(result.t3_count, result.t3_total)},')
+        fout.write(f'{result.t3_count}/{result.t3_total},{result.t3_count / result.t3_total:.1%},')
+        fout.write(f'{result.wt3_count}/{result.wt3_total},{result.wt3_count / result.wt3_total:.1%},')
     else:
-        fout.write(',,,')
+        fout.write('x,x,')
     if result.acpl:
         fout.write(f'{result.acpl:.1f},{result.sample_size},')
     else:
-        fout.write(',,')
+        fout.write('x,x,')
     total = result.cp_loss_total
     if total > 0:
         for cp_loss_name in _cp_loss_names:
@@ -128,7 +175,7 @@ def t_output_csv(fout, result):
             fout.write(f'{stats_str},')
     else:
         for cp_loss_name in _cp_loss_names:
-            fout.write(',,,,,,,,,,,,,,,,,,,,,,,,')
+            fout.write(f',,,,')
 
 def a1(working_set, report_name):
     p = load_a1_params()
@@ -154,7 +201,7 @@ def a1(working_set, report_name):
             fout.write(f'{player.username} ({result.min_rating} - {result.max_rating})\n')
             t_output(fout, result)
             fout.write(' '.join(result.game_list) + '\n')
-            fout.write(str(len(result.game_list)) + ' games \n\n')
+            fout.write('\n')
 
         fout.write('\n------ BY GAME ------\n\n')
         for (player, gameid), result in sorted(by_game.items(), key=lambda i: i[1].t3_sort):
@@ -185,12 +232,12 @@ def a1csv(working_set, report_name):
     with open(out_path, 'w') as fout:
         cp_loss_name_string = ''
         for cp_loss_name in _cp_loss_names:
-            cp_loss_name_string += f'CPL{cp_loss_name},CPL{cp_loss_name}%,CPL{cp_loss_name} CI,'
-        fout.write(f'Name,Rating min,Rating max,T1:,T1%:,T1 CI,T2:,T2%:,T2 CI,T3:,T3%:,T3 CI,ACPL:,Positions,{cp_loss_name_string}# Games,Games\n')
+            cp_loss_name_string += f'CPL{cp_loss_name},CPL{cp_loss_name}%,CPL{cp_loss_name} CI lower,CPL{cp_loss_name} CI upper,'
+        fout.write(f'Name,Rating range,T1:,T1%:,T2:,T2%:,T3:,T3%:,ACPL:,Positions,{cp_loss_name_string}Games\n')
         for player, result in sorted(by_player.items(), key=lambda i: i[1].t3_sort):
-            fout.write(f'{player.username},{result.min_rating},{result.max_rating},')
+            fout.write(f'{player.username},{result.min_rating} - {result.max_rating},')
             t_output_csv(fout, result)
-            fout.write(str(len(result.game_list)) + ',' + ' '.join(result.game_list) + '\n')
+            fout.write(' '.join(result.game_list) + '\n')
 
     print(f'Wrote report on {included} games to "{out_path}"')
 
@@ -203,9 +250,9 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
         r.with_rating(int(pgn.headers['WhiteElo' if color == 'w' else 'BlackElo']))
     except ValueError:
         pass
-
     evals = []
     for m in moves:
+        
         if m.color != color:
             evals.append(-m.pv1_eval)
             continue
@@ -213,28 +260,68 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
 
         if m.number <= p['book_depth']:
             continue
+		
+	#Skip positions if they're better (assuming people don't cheat when better)
+        if m.pv1_eval > p['undecided_pos_thresh'] and m.pv1_eval <= 99999:
+            if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
+                if m.pv2_eval < m.pv1_eval:
+                    r.bt1_total += 1
+                    if m.played_rank and m.played_rank <= 1:
+                        r.bt1_count += 1
+                if m.pv3_eval is not None and m.pv2_eval <= m.pv3_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv3_eval + p['unclear_pos_thresh']:
+                    if m.pv3_eval < m.pv2_eval:
+                        r.bt2_total += 1
+                        if m.played_rank and m.played_rank <= 2:
+                            r.bt2_count += 1
+                    if m.pv4_eval is not None and m.pv3_eval <= m.pv4_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv4_eval + p['unclear_pos_thresh']:
+                        if m.pv4_eval < m.pv3_eval:
+                            r.bt3_total += 1
+                            if m.played_rank and m.played_rank <= 3:
+                                r.bt3_count += 1
+            continue
+        
+	#Make a separate disply for losing positions
+        if m.pv1_eval < -p['undecided_pos_thresh'] and m.pv1_eval >= -99999:
+            if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
+                if m.pv2_eval < m.pv1_eval:
+                    r.wt1_total += 1
+                    if m.played_rank and m.played_rank <= 1:
+                        r.wt1_count += 1
+                if m.pv3_eval is not None and m.pv2_eval <= m.pv3_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv3_eval + p['unclear_pos_thresh']:
+                    if m.pv3_eval < m.pv2_eval:
+                        r.wt2_total += 1
+                        if m.played_rank and m.played_rank <= 2:
+                            r.wt2_count += 1
+                    if m.pv4_eval is not None and m.pv3_eval <= m.pv4_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv4_eval + p['unclear_pos_thresh']:
+                        if m.pv4_eval < m.pv3_eval:
+                            r.wt3_total += 1
+                            if m.played_rank and m.played_rank <= 3:
+                                r.wt3_count += 1
+            continue
+		
 
-        if m.pv1_eval <= -p['undecided_pos_thresh'] or m.pv1_eval >= p['undecided_pos_thresh']:
+###############
+        if abs(m.pv1_eval) <= p['undecided_pos_thresh']:
+            if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
+                if m.pv2_eval < m.pv1_eval:
+                    r.t1_total += 1
+                    if m.played_rank and m.played_rank <= 1:
+                        r.t1_count += 1
+                if m.pv3_eval is not None and m.pv2_eval <= m.pv3_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv3_eval + p['unclear_pos_thresh']:
+                    if m.pv3_eval < m.pv2_eval:
+                        r.t2_total += 1
+                        if m.played_rank and m.played_rank <= 2:
+                            r.t2_count += 1
+                    if m.pv4_eval is not None and m.pv3_eval <= m.pv4_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv4_eval + p['unclear_pos_thresh']:
+                        if m.pv4_eval < m.pv3_eval:
+                            r.t3_total += 1
+                            if m.played_rank and m.played_rank <= 3:
+                                r.t3_count += 1
+        else:#Don't do the rest if this condition isn't the one that's met
             continue
 
-        if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
-            if m.pv2_eval < m.pv1_eval:
-                r.t1_total += 1
-                if m.played_rank and m.played_rank <= 1:
-                    r.t1_count += 1
 
-            if m.pv3_eval is not None and m.pv2_eval <= m.pv3_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv3_eval + p['unclear_pos_thresh']:
-                if m.pv3_eval < m.pv2_eval:
-                    r.t2_total += 1
-                    if m.played_rank and m.played_rank <= 2:
-                        r.t2_count += 1
-
-                if m.pv4_eval is not None and m.pv3_eval <= m.pv4_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv4_eval + p['unclear_pos_thresh']:
-                    if m.pv4_eval < m.pv3_eval:
-                        r.t3_total += 1
-                        if m.played_rank and m.played_rank <= 3:
-                            r.t3_count += 1
-
+################
         initial_cpl = max(m.pv1_eval - m.played_eval, 0)
         r.cp_loss_total += 1
         for cp_name, cp_op in zip(_cp_loss_names, _cp_loss_ops):
