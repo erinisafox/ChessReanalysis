@@ -73,21 +73,21 @@ class PgnSpyResult():
         self.sample_total_cpl += other.sample_total_cpl
         self.gt0 += other.gt0
         self.gt10 += other.gt10
+        
         self.t1_total += other.t1_total
         self.t1_count += other.t1_count
         self.t2_total += other.t2_total
         self.t2_count += other.t2_count
         self.t3_total += other.t3_total
         self.t3_count += other.t3_count
-    	####
+        
         self.wt1_total += other.wt1_total
         self.wt1_count += other.wt1_count
         self.wt2_total += other.wt2_total
         self.wt2_count += other.wt2_count
         self.wt3_total += other.wt3_total
         self.wt3_count += other.wt3_count
-        ####
-        ####
+
         self.bt1_total += other.bt1_total
         self.bt1_count += other.bt1_count
         self.bt2_total += other.bt2_total
@@ -147,20 +147,42 @@ def t_output(fout, result):
             stats_str = generate_stats_string(loss_count, total)
             fout.write(f'  {cp_loss_name} CP loss: {stats_str}\n')
 
+#Character spam since I don't know any better ways to do it
 def t_output_csv(fout, result):
     if result.t1_total:
         fout.write(f'{result.t1_count}/{result.t1_total},{result.t1_count / result.t1_total:.1%},')
-        fout.write(f'{result.wt1_count}/{result.wt1_total},{result.wt1_count / result.wt1_total:.1%},')
     else:
         fout.write('x,x,')
     if result.t2_total:
         fout.write(f'{result.t2_count}/{result.t2_total},{result.t2_count / result.t2_total:.1%},')
-        fout.write(f'{result.wt2_count}/{result.wt2_total},{result.wt2_count / result.wt2_total:.1%},')
     else:
         fout.write('x,x,')
     if result.t3_total:
         fout.write(f'{result.t3_count}/{result.t3_total},{result.t3_count / result.t3_total:.1%},')
+    else:
+        fout.write('x,x,')
+    if result.wt1_total:
+        fout.write(f'{result.wt1_count}/{result.wt1_total},{result.wt1_count / result.wt1_total:.1%},')
+    else:
+        fout.write('x,x,')
+    if result.wt2_total:
+        fout.write(f'{result.wt2_count}/{result.wt2_total},{result.wt2_count / result.wt2_total:.1%},')
+    else:
+        fout.write('x,x,')
+    if result.wt3_total:
         fout.write(f'{result.wt3_count}/{result.wt3_total},{result.wt3_count / result.wt3_total:.1%},')
+    else:
+        fout.write('x,x,')
+    if result.bt1_total:
+        fout.write(f'{result.bt1_count}/{result.bt1_total},{result.bt1_count / result.bt1_total:.1%},')
+    else:
+        fout.write('x,x,')
+    if result.bt2_total:
+        fout.write(f'{result.bt2_count}/{result.bt2_total},{result.bt2_count / result.bt2_total:.1%},')
+    else:
+        fout.write('x,x,')
+    if result.bt3_total:
+        fout.write(f'{result.bt3_count}/{result.bt3_total},{result.bt3_count / result.bt3_total:.1%},')
     else:
         fout.write('x,x,')
     if result.acpl:
@@ -261,7 +283,7 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
         if m.number <= p['book_depth']:
             continue
 		
-	#Skip positions if they're better (assuming people don't cheat when better)
+	#Start of major edits. Trying to make my dreams come true
         if m.pv1_eval > p['undecided_pos_thresh'] and m.pv1_eval <= 99999:
             if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
                 if m.pv2_eval < m.pv1_eval:
@@ -280,7 +302,7 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
                                 r.bt3_count += 1
             continue
         
-	#Make a separate disply for losing positions
+	#Second stage of major edits
         if m.pv1_eval < -p['undecided_pos_thresh'] and m.pv1_eval >= -99999:
             if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
                 if m.pv2_eval < m.pv1_eval:
@@ -298,9 +320,8 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
                             if m.played_rank and m.played_rank <= 3:
                                 r.wt3_count += 1
             continue
-		
 
-###############
+	#Basically what it was originally
         if abs(m.pv1_eval) <= p['undecided_pos_thresh']:
             if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
                 if m.pv2_eval < m.pv1_eval:
@@ -317,11 +338,9 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
                             r.t3_total += 1
                             if m.played_rank and m.played_rank <= 3:
                                 r.t3_count += 1
-        else:#Don't do the rest if this condition isn't the one that's met
+        else:#Should be foolproof to do it like this?
             continue
 
-
-################
         initial_cpl = max(m.pv1_eval - m.played_eval, 0)
         r.cp_loss_total += 1
         for cp_name, cp_op in zip(_cp_loss_names, _cp_loss_ops):
@@ -335,6 +354,7 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
 
         r.sample_size += 1
         r.sample_total_cpl += cpl
+        #Have so many questions about this part
         if cpl > 0:
             r.gt0 += 1
         if cpl > 10:
