@@ -6,6 +6,7 @@ from datetime import datetime
 from operator import eq, lt
 from functools import partial
 import math
+from random import *
 
 # TODO: Make this configurable via the config file.
 _cp_loss_intervals = [0, 10, 25, 50, 100, 200, 500]
@@ -33,6 +34,24 @@ def confidence_interval(p, e):
         p - (2.0*e),
         p + (2.0*e)
     ]
+
+#Empirical bootstrap interval - takes sample array and returns 95% CI
+#BCa is a work in progress
+def bootstrap_interval(array): #assumes 95% intervals as a convention
+    mn = (1.0*sum(array)) / len(array)
+    deltas = []
+    for X in range(0,400): #400 bootstrap samples for convenience
+        #Calculating the average while the sampling occurs.
+        #The sample isn't ever explicitly generated.
+        bootsum = 0.0
+        for Y in range(0,len(array)):
+            bootsum += array[randrange(len(array))]
+        deltas.append((bootsum / len(array)) - mn)
+    deltas = sorted(deltas)
+    lowerval = deltas[9] #should correspond to the 2.5th percentile
+    upperval = deltas[389] #should correspond to the 97.5th percentile
+    
+    return [round(mn - upperval,1), round(mn - lowerval,1)]
 
 class PgnSpyResult():
 
@@ -67,6 +86,8 @@ class PgnSpyResult():
         self.game_list = []
         self.cp_loss_count = defaultdict(int)
         self.cp_loss_total = 0
+        self.cp_loss_list_by_move = []
+        self.cp_loss_list_by_game = []
 
     def add(self, other):
         self.sample_size += other.sample_size
@@ -101,6 +122,8 @@ class PgnSpyResult():
         for k in _cp_loss_names:
             self.cp_loss_count[k] += other.cp_loss_count[k]
         self.cp_loss_total += other.cp_loss_total
+        self.cp_loss_list_by_move += other.cp_loss_list_by_move #gives a 1d array with CPLs for each move
+        self.cp_loss_list_by_game.append(other.cp_loss_list_by_game) #gives 2d array with CPLs in individual games
 
     def with_rating(self, rating):
         if rating is None:
@@ -119,6 +142,7 @@ class PgnSpyResult():
         return -wilson_interval(self.t3_count, self.t3_total)[0]
 
 def t_output(fout, result):
+    #Commented some of the less important output to make it easier on the eyes
     if result.t1_total:
         fout.write('T1: {}\n'.format(generate_stats_string(result.t1_count, result.t1_total)))
     if result.t2_total:
@@ -127,19 +151,27 @@ def t_output(fout, result):
         fout.write('T3: {}\n'.format(generate_stats_string(result.t3_count, result.t3_total)))
     if result.wt1_total:
         fout.write('WT1: {}\n'.format(generate_stats_string(result.wt1_count, result.wt1_total)))
-    if result.wt2_total:
-        fout.write('WT2: {}\n'.format(generate_stats_string(result.wt2_count, result.wt2_total)))
-    if result.wt3_total:
-        fout.write('WT3: {}\n'.format(generate_stats_string(result.wt3_count, result.wt3_total)))
+    #if result.wt2_total:
+    #    fout.write('WT2: {}\n'.format(generate_stats_string(result.wt2_count, result.wt2_total)))
+    #if result.wt3_total:
+    #    fout.write('WT3: {}\n'.format(generate_stats_string(result.wt3_count, result.wt3_total)))
     if result.bt1_total:
         fout.write('BT1: {}\n'.format(generate_stats_string(result.bt1_count, result.bt1_total)))
-    if result.bt2_total:
-        fout.write('BT2: {}\n'.format(generate_stats_string(result.bt2_count, result.bt2_total)))
-    if result.bt3_total:
-        fout.write('BT3: {}\n'.format(generate_stats_string(result.bt3_count, result.bt3_total)))
+    #if result.bt2_total:
+    #    fout.write('BT2: {}\n'.format(generate_stats_string(result.bt2_count, result.bt2_total)))
+    #if result.bt3_total:
+    #    fout.write('BT3: {}\n'.format(generate_stats_string(result.bt3_count, result.bt3_total)))
     
     if result.acpl:
-        fout.write(f'ACPL: {result.acpl:.1f} ({result.sample_size})\n')
+        game_acpl = [] #temp variable to help with averaging ACPLs of games
+        for X in range(0,len(result.cp_loss_list_by_game)):
+            if len(result.cp_loss_list_by_game[X]):
+                game_acpl.append(sum(result.cp_loss_list_by_game[X])/len(result.cp_loss_list_by_game[X]))
+        #Print ACPL calculated from average CPLs of moves
+        fout.write(f'ACPL M: {result.acpl:.1f} ({result.sample_size}) {str(bootstrap_interval(result.cp_loss_list_by_move))}\n')
+        #Print ACPL calculated from average ACPLs of games, if possible
+        if len(game_acpl):
+            fout.write(f'ACPL G: {sum(game_acpl)/len(game_acpl):.1f} ({len(game_acpl)}) {str(bootstrap_interval(game_acpl))}\n')
     total = result.cp_loss_total
     if total > 0:
         for cp_loss_name in _cp_loss_names:
@@ -148,7 +180,9 @@ def t_output(fout, result):
             fout.write(f'  {cp_loss_name} CP loss: {stats_str}\n')
 
 #Character spam since I don't know any better ways to do it
+#I never use CSV exports, so this isn't priority for me to tidy up
 def t_output_csv(fout, result):
+    #Commenting out lesser used stats to make it easier on the eyes
     if result.t1_total:
         fout.write(f'{result.t1_count}/{result.t1_total},{result.t1_count / result.t1_total:.1%},')
     else:
@@ -165,30 +199,41 @@ def t_output_csv(fout, result):
         fout.write(f'{result.wt1_count}/{result.wt1_total},{result.wt1_count / result.wt1_total:.1%},')
     else:
         fout.write('x,x,')
-    if result.wt2_total:
-        fout.write(f'{result.wt2_count}/{result.wt2_total},{result.wt2_count / result.wt2_total:.1%},')
-    else:
-        fout.write('x,x,')
-    if result.wt3_total:
-        fout.write(f'{result.wt3_count}/{result.wt3_total},{result.wt3_count / result.wt3_total:.1%},')
-    else:
-        fout.write('x,x,')
+    #if result.wt2_total:
+    #    fout.write(f'{result.wt2_count}/{result.wt2_total},{result.wt2_count / result.wt2_total:.1%},')
+    #else:
+    #    fout.write('x,x,')
+    #if result.wt3_total:
+    #    fout.write(f'{result.wt3_count}/{result.wt3_total},{result.wt3_count / result.wt3_total:.1%},')
+    #else:
+    #    fout.write('x,x,')
     if result.bt1_total:
         fout.write(f'{result.bt1_count}/{result.bt1_total},{result.bt1_count / result.bt1_total:.1%},')
     else:
         fout.write('x,x,')
-    if result.bt2_total:
-        fout.write(f'{result.bt2_count}/{result.bt2_total},{result.bt2_count / result.bt2_total:.1%},')
-    else:
-        fout.write('x,x,')
-    if result.bt3_total:
-        fout.write(f'{result.bt3_count}/{result.bt3_total},{result.bt3_count / result.bt3_total:.1%},')
-    else:
-        fout.write('x,x,')
+    #if result.bt2_total:
+    #    fout.write(f'{result.bt2_count}/{result.bt2_total},{result.bt2_count / result.bt2_total:.1%},')
+    #else:
+    #    fout.write('x,x,')
+    #if result.bt3_total:
+    #    fout.write(f'{result.bt3_count}/{result.bt3_total},{result.bt3_count / result.bt3_total:.1%},')
+    #else:
+    #    fout.write('x,x,')
     if result.acpl:
-        fout.write(f'{result.acpl:.1f},{result.sample_size},')
+        #Print ACPL calculated from average CPLs of moves
+        fout.write(f'{result.acpl:.1f},{result.sample_size},{str(bootstrap_interval(result.cp_loss_list_by_move))},')
     else:
-        fout.write('x,x,')
+        fout.write('x,x,x,x,')
+    #Print ACPL calculated from average ACPLs of games, if possible
+    game_acpl = [] #temp variable to help with averaging ACPLs of games
+    for X in range(0,len(result.cp_loss_list_by_game)):
+        if len(result.cp_loss_list_by_game[X]):
+            game_acpl.append(sum(result.cp_loss_list_by_game[X])/len(result.cp_loss_list_by_game[X]))
+    if len(game_acpl):
+        fout.write(f'{sum(game_acpl)/len(game_acpl):.1f},{len(game_acpl)},{str(bootstrap_interval(game_acpl))},')
+    else:
+        fout.write('x,x,x,x,')
+
     total = result.cp_loss_total
     if total > 0:
         for cp_loss_name in _cp_loss_names:
@@ -255,7 +300,7 @@ def a1csv(working_set, report_name):
         cp_loss_name_string = ''
         for cp_loss_name in _cp_loss_names:
             cp_loss_name_string += f'CPL{cp_loss_name},CPL{cp_loss_name}%,CPL{cp_loss_name} CI lower,CPL{cp_loss_name} CI upper,'
-        fout.write(f'Name,Rating range,T1:,T1%:,T2:,T2%:,T3:,T3%:,ACPL:,Positions,{cp_loss_name_string}Games\n')
+        fout.write(f'Name,Rating range,T1:,T1%:,T2:,T2%:,T3:,T3%:,WT1:,WT1%,BT1:,BT1%:,ACPL M:,Positions,LCI,UCI,ACPL G,Positions,LCI,UCI,{cp_loss_name_string}Games\n')
         for player, result in sorted(by_player.items(), key=lambda i: i[1].t3_sort):
             fout.write(f'{player.username},{result.min_rating} - {result.max_rating},')
             t_output_csv(fout, result)
@@ -284,6 +329,7 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
             continue
 		
 	#Start of major edits. Trying to make my dreams come true
+        #Tracks negative eval positions.
         if m.pv1_eval > p['undecided_pos_thresh'] and m.pv1_eval <= 99999:
             if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
                 if m.pv2_eval < m.pv1_eval:
@@ -303,6 +349,7 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
             continue
         
 	#Second stage of major edits
+        #Tracks positive eval positions (not as useful, probably)
         if m.pv1_eval < -p['undecided_pos_thresh'] and m.pv1_eval >= -99999:
             if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
                 if m.pv2_eval < m.pv1_eval:
@@ -322,6 +369,7 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
             continue
 
 	#Basically what it was originally
+        #Tracks undecided positions
         if abs(m.pv1_eval) <= p['undecided_pos_thresh']:
             if m.pv2_eval is not None and m.pv1_eval <= m.pv2_eval + p['forced_move_thresh'] and m.pv1_eval <= m.pv2_eval + p['unclear_pos_thresh']:
                 if m.pv2_eval < m.pv1_eval:
@@ -338,7 +386,10 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
                             r.t3_total += 1
                             if m.played_rank and m.played_rank <= 3:
                                 r.t3_count += 1
-        else:#Should be foolproof to do it like this?
+        #Should be foolproof to do it like this?
+        #Only go on to calculate ACPLs if undecided position
+        #So that old results still have the same ACPL calculations
+        else:
             continue
 
         initial_cpl = max(m.pv1_eval - m.played_eval, 0)
@@ -354,6 +405,8 @@ def a1_game(p, by_player, by_game, game_obj, pgn, color, player):
 
         r.sample_size += 1
         r.sample_total_cpl += cpl
+        r.cp_loss_list_by_move.append(cpl)
+        r.cp_loss_list_by_game.append(cpl)
         #Have so many questions about this part
         if cpl > 0:
             r.gt0 += 1
