@@ -22,7 +22,8 @@ def generate_stats_string(sample, total):
 def generate_stats_string_csv(sample, total):
     percentage = sample / total
     stderr = std_error(percentage, total)
-    ci = confidence_interval(percentage, stderr)
+    #Was there any reason to not use a Wilson interval on CSV export?
+    ci = wilson_interval(sample, total)
     return f'{sample}/{total},{percentage:.01%},{ci[0]*100:.01f},{ci[1]*100:.01f}'
 
 def std_error(p, n):
@@ -38,19 +39,29 @@ def confidence_interval(p, e):
 #Empirical bootstrap interval - takes sample array and returns 95% CI
 #BCa is a work in progress
 def bootstrap_interval(array): #assumes 95% intervals as a convention
-    mn = (1.0*sum(array)) / len(array)
+    mn = 0
+    temparray = []
+    for X in array:
+        temparray += X
+    mn = 1.0*sum(temparray)/len(temparray)
+
     deltas = []
-    for X in range(0,400): #400 bootstrap samples for convenience
-        #Calculating the average while the sampling occurs.
-        #The sample isn't ever explicitly generated.
-        bootsum = 0.0
+    for X in range(0,5000): #5000 bootstrap samples seems like a nice number
+        #Games are sampled, not moves. ACPL calculated on move-basis, though.
+        #Games in bootstrap sample is equal to number of games in CR sample.
+        #This means not every bootstrap sample has the same number of moves.
+        bootsample = []
         for Y in range(0,len(array)):
-            bootsum += array[randrange(len(array))]
-        deltas.append((bootsum / len(array)) - mn)
+            randnum = randrange(len(array))
+            bootsample += array[randnum]
+        deltas.append((sum(bootsample) / len(bootsample)) - mn)
     deltas = sorted(deltas)
-    lowerval = deltas[9] #should correspond to the 2.5th percentile
-    upperval = deltas[389] #should correspond to the 97.5th percentile
-    
+    d975 = math.floor(0.025 * len(deltas))
+    d025 = len(deltas) - d975
+    lowerval = deltas[d975] #should correspond to the 2.5th percentile
+    upperval = deltas[d025] #should correspond to the 97.5th percentile
+
+    #Source: https://ocw.mit.edu/courses/mathematics/18-05-introduction-to-probability-and-statistics-spring-2014/readings/MIT18_05S14_Reading24.pdf
     return [round(mn - upperval,1), round(mn - lowerval,1)]
 
 class PgnSpyResult():
@@ -122,8 +133,9 @@ class PgnSpyResult():
         for k in _cp_loss_names:
             self.cp_loss_count[k] += other.cp_loss_count[k]
         self.cp_loss_total += other.cp_loss_total
-        self.cp_loss_list_by_move += other.cp_loss_list_by_move #gives a 1d array with CPLs for each move
-        self.cp_loss_list_by_game.append(other.cp_loss_list_by_game) #gives 2d array with CPLs in individual games
+        self.cp_loss_list_by_move += other.cp_loss_list_by_move #gives a 1d array with CPLs for each move. mostly for debugging
+        if len(other.cp_loss_list_by_game): #gives 2d array with CPLs in individual games, but excludes empty arrays
+            self.cp_loss_list_by_game.append(other.cp_loss_list_by_game)
 
     def with_rating(self, rating):
         if rating is None:
@@ -168,10 +180,10 @@ def t_output(fout, result):
             if len(result.cp_loss_list_by_game[X]):
                 game_acpl.append(sum(result.cp_loss_list_by_game[X])/len(result.cp_loss_list_by_game[X]))
         #Print ACPL calculated from average CPLs of moves
-        fout.write(f'ACPL M: {result.acpl:.1f} ({result.sample_size}) {str(bootstrap_interval(result.cp_loss_list_by_move))}\n')
+        fout.write(f'ACPL M: {result.acpl:.1f} ({result.sample_size}) ({len(result.cp_loss_list_by_game)}) {str(bootstrap_interval(result.cp_loss_list_by_game))}\n')
         #Print ACPL calculated from average ACPLs of games, if possible
-        if len(game_acpl):
-            fout.write(f'ACPL G: {sum(game_acpl)/len(game_acpl):.1f} ({len(game_acpl)}) {str(bootstrap_interval(game_acpl))}\n')
+        #if len(game_acpl):
+        #    fout.write(f'ACPL G: {sum(game_acpl)/len(game_acpl):.1f} ({len(game_acpl)}) {str(bootstrap_interval(game_acpl))}\n')
     total = result.cp_loss_total
     if total > 0:
         for cp_loss_name in _cp_loss_names:
@@ -221,18 +233,18 @@ def t_output_csv(fout, result):
     #    fout.write('x,x,')
     if result.acpl:
         #Print ACPL calculated from average CPLs of moves
-        fout.write(f'{result.acpl:.1f},{result.sample_size},{str(bootstrap_interval(result.cp_loss_list_by_move))},')
+        fout.write(f'{result.acpl:.1f},{result.sample_size},{len(result.cp_loss_list_by_game)},{str(bootstrap_interval(result.cp_loss_list_by_game))},')
     else:
-        fout.write('x,x,x,x,')
+        fout.write('x,x,x,x,x,')
     #Print ACPL calculated from average ACPLs of games, if possible
-    game_acpl = [] #temp variable to help with averaging ACPLs of games
-    for X in range(0,len(result.cp_loss_list_by_game)):
-        if len(result.cp_loss_list_by_game[X]):
-            game_acpl.append(sum(result.cp_loss_list_by_game[X])/len(result.cp_loss_list_by_game[X]))
-    if len(game_acpl):
-        fout.write(f'{sum(game_acpl)/len(game_acpl):.1f},{len(game_acpl)},{str(bootstrap_interval(game_acpl))},')
-    else:
-        fout.write('x,x,x,x,')
+    #game_acpl = [] #temp variable to help with averaging ACPLs of games
+    #for X in range(0,len(result.cp_loss_list_by_game)):
+    #    if len(result.cp_loss_list_by_game[X]):
+    #        game_acpl.append(sum(result.cp_loss_list_by_game[X])/len(result.cp_loss_list_by_game[X]))
+    #if len(game_acpl):
+    #    fout.write(f'{sum(game_acpl)/len(game_acpl):.1f},{len(game_acpl)},{str(bootstrap_interval(game_acpl))},')
+    #else:
+    #    fout.write('x,x,x,x,')
 
     total = result.cp_loss_total
     if total > 0:
@@ -300,7 +312,7 @@ def a1csv(working_set, report_name):
         cp_loss_name_string = ''
         for cp_loss_name in _cp_loss_names:
             cp_loss_name_string += f'CPL{cp_loss_name},CPL{cp_loss_name}%,CPL{cp_loss_name} CI lower,CPL{cp_loss_name} CI upper,'
-        fout.write(f'Name,Rating range,T1:,T1%:,T2:,T2%:,T3:,T3%:,WT1:,WT1%,BT1:,BT1%:,ACPL M:,Positions,LCI,UCI,ACPL G,Positions,LCI,UCI,{cp_loss_name_string}Games\n')
+        fout.write(f'Name,Rating range,T1:,T1%:,T2:,T2%:,T3:,T3%:,WT1:,WT1%,BT1:,BT1%:,ACPL:,Positions,Games,LCI,UCI,{cp_loss_name_string}Games\n')
         for player, result in sorted(by_player.items(), key=lambda i: i[1].t3_sort):
             fout.write(f'{player.username},{result.min_rating} - {result.max_rating},')
             t_output_csv(fout, result)
