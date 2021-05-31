@@ -6,7 +6,9 @@ from datetime import datetime
 from operator import eq, lt
 from functools import partial
 import math
+from math import *
 from random import *
+import time
 
 # TODO: Make this configurable via the config file.
 _cp_loss_intervals = [0, 10, 25, 50, 100, 200, 500]
@@ -36,6 +38,14 @@ def confidence_interval(p, e):
         p + (2.0*e)
     ]
 
+#Courtesy of bufferunderrun. Speedier random number generation
+def randrange_stripped(n):
+    k = n.bit_length()  # don't use (n-1) here because n can be 1
+    r = getrandbits(k)  # 0 <= r < 2**k
+    while r >= n:
+        r = getrandbits(k)
+    return r
+
 #Empirical bootstrap interval - takes sample array and returns 95% CI
 #BCa is a work in progress
 def bootstrap_interval(array): #assumes 95% intervals as a convention
@@ -46,14 +56,15 @@ def bootstrap_interval(array): #assumes 95% intervals as a convention
     mn = 1.0*sum(temparray)/len(temparray)
 
     deltas = []
-    for X in range(0,5000): #5000 bootstrap samples seems like a nice number
+    for X in range(0,20000): #1000 bootstrap samples seems like a nice number
         #Games are sampled, not moves. ACPL calculated on move-basis, though.
         #Games in bootstrap sample is equal to number of games in CR sample.
         #This means not every bootstrap sample has the same number of moves.
         bootsample = []
         for Y in range(0,len(array)):
-            randnum = randrange(len(array))
+            randnum = randrange_stripped(len(array))
             bootsample += array[randnum]
+        #print(bootsample)
         deltas.append((sum(bootsample) / len(bootsample)) - mn)
     deltas = sorted(deltas)
     d975 = math.floor(0.025 * len(deltas))
@@ -63,6 +74,98 @@ def bootstrap_interval(array): #assumes 95% intervals as a convention
 
     #Source: https://ocw.mit.edu/courses/mathematics/18-05-introduction-to-probability-and-statistics-spring-2014/readings/MIT18_05S14_Reading24.pdf
     return [round(mn - upperval,1), round(mn - lowerval,1)]
+
+def Gcdf(sortedarray, value):
+    X = 0.0
+    for X in range(0,len(sortedarray)):
+        if sortedarray[X] > value:
+            break
+    return X / len(sortedarray)
+
+def invGcdf(sortedarray, value):
+    index = math.floor(value*len(sortedarray))
+    #print(index)
+    if index > len(sortedarray)-1:
+        return sortedarray[len(sortedarray)-1]
+    if index < 1:
+        return sortedarray[0]
+    return sortedarray[math.floor(value*len(sortedarray))]
+
+def skewness(sarray,larray): #jackknife method
+    mean = sum(sarray)/sum(larray)
+    h = sum(sarray)
+    i = sum(larray)
+    M3 = 0.0
+    M2 = 0.0
+    st = time.time()
+    if len(larray) < 2:
+        return 0
+    for X in range(0,len(larray)):
+        jkmean = (h-sarray[X])/(i-larray[X])
+        M3 += (mean-jkmean)**3
+        M2 += (mean-jkmean)**2
+
+    #print("Jackknife time: " +  str(time.time()-st))
+    if M2 != 0:
+        return M3 / (6 * (M2 ** 1.5))
+    return 0
+
+def cdf(x):
+    return 0.5 * math.erfc(-x/sqrt(2))
+
+def invcdf(phi): #bisection method
+    tolerance = 0.000001 #how far off we're willing to be
+    lowerbound = -99.0
+    upperbound = 99.0
+    xguess = 0.5
+
+    phiguess = cdf(xguess)
+    while abs(phiguess - phi) > tolerance:
+        if phiguess - phi < 0:
+            lowerbound = xguess
+        else:
+            upperbound = xguess
+        xguess = (lowerbound + upperbound) / 2
+        phiguess = cdf(xguess)
+
+    return xguess
+
+def bca(array):
+    bssize = 20000 #20000 samples reproducibly gives upper and lower CIs +/-0.2
+    deltas = [0]*bssize
+    #stime = time.time()
+    sarray = [0]*len(array)
+    larray = [0]*len(array)
+    for X in range(0,len(array)):
+        #print(array[X])
+        larray[X] = len(array[X])
+        sarray[X] = sum(array[X])
+        #print(array[X])
+    for X in range(0,bssize):
+        #Games are sampled, not moves. ACPL calculated on move-basis, though.
+        #Games in bootstrap sample is equal to number of games in CR sample.
+        #This means not every bootstrap sample has the same number of moves.
+        bootsample = 0.0
+        deltalen = 0
+        for Y in range(0,len(array)):
+            randnum = randrange_stripped(len(array))
+            bootsample += sarray[randnum]
+            deltalen += larray[randnum]
+        deltas[X] = bootsample / deltalen
+    deltas = sorted(deltas)
+
+    #https://www.tau.ac.il/~saharon/Boot/10.1.1.133.8405.pdf for theory
+    mean = sum(deltas)/len(deltas)
+    z0 = invcdf(Gcdf(deltas, mean))
+    a = skewness(deltas, [1]*len(deltas))
+    a1 = 0.025
+    a2 = 0.975
+    thetaa1 = invGcdf(deltas, cdf(z0 + (z0 + invcdf(a1))/(1-a*(z0+invcdf(a1)))))
+    thetaa2 = invGcdf(deltas, cdf(z0 + (z0 + invcdf(a2))/(1-a*(z0+invcdf(a2)))))
+
+    #print(time.time()-stime)
+    return [round(thetaa1,1), round(thetaa2,1)]
+
 
 class PgnSpyResult():
 
@@ -180,10 +283,12 @@ def t_output(fout, result):
             if len(result.cp_loss_list_by_game[X]):
                 game_acpl.append(sum(result.cp_loss_list_by_game[X])/len(result.cp_loss_list_by_game[X]))
         #Print ACPL calculated from average CPLs of moves
-        fout.write(f'ACPL M: {result.acpl:.1f} ({result.sample_size}) ({len(result.cp_loss_list_by_game)}) {str(bootstrap_interval(result.cp_loss_list_by_game))}\n')
+        fout.write(f'ACPL: {result.acpl:.1f} {str(bca(result.cp_loss_list_by_game))} ({result.sample_size}) ({len(result.cp_loss_list_by_game)})\n')
         #Print ACPL calculated from average ACPLs of games, if possible
         #if len(game_acpl):
         #    fout.write(f'ACPL G: {sum(game_acpl)/len(game_acpl):.1f} ({len(game_acpl)}) {str(bootstrap_interval(game_acpl))}\n')
+        #Print the CP loss list array, for debugging purposes
+        #fout.write(f'{str(result.cp_loss_list_by_game)}\n')
     total = result.cp_loss_total
     if total > 0:
         for cp_loss_name in _cp_loss_names:
@@ -233,7 +338,7 @@ def t_output_csv(fout, result):
     #    fout.write('x,x,')
     if result.acpl:
         #Print ACPL calculated from average CPLs of moves
-        fout.write(f'{result.acpl:.1f},{result.sample_size},{len(result.cp_loss_list_by_game)},{str(bootstrap_interval(result.cp_loss_list_by_game))},')
+        fout.write(f'{result.acpl:.1f},{result.sample_size},{len(result.cp_loss_list_by_game)},{str(bca(result.cp_loss_list_by_game))},')
     else:
         fout.write('x,x,x,x,x,')
     #Print ACPL calculated from average ACPLs of games, if possible
@@ -276,18 +381,21 @@ def a1(working_set, report_name):
     out_path = f'reports/report-a1--{datetime.now():%Y-%m-%d--%H-%M-%S}--{report_name}.txt'
     with open(out_path, 'w') as fout:
         fout.write('------ BY PLAYER ------\n\n')
+        #print("Started")
+        #stim = time.time()
         for player, result in sorted(by_player.items(), key=lambda i: i[1].t3_sort):
             fout.write(f'{player.username} ({result.min_rating} - {result.max_rating})\n')
             t_output(fout, result)
             fout.write(' '.join(result.game_list) + '\n')
             fout.write('\n')
-
-        fout.write('\n------ BY GAME ------\n\n')
-        for (player, gameid), result in sorted(by_game.items(), key=lambda i: i[1].t3_sort):
-            fout.write(f'{player.username} ({result.min_rating})\n')
-            t_output(fout, result)
-            fout.write(' '.join(result.game_list) + '\n')
-            fout.write('\n')
+        #I've never looked at CR on a game-basis, and I don't think anyone ever should
+        #fout.write('\n------ BY GAME ------\n\n')
+        #for (player, gameid), result in sorted(by_game.items(), key=lambda i: i[1].t3_sort):
+        #    fout.write(f'{player.username} ({result.min_rating})\n')
+        #    t_output(fout, result)
+        #    fout.write(' '.join(result.game_list) + '\n')
+        #    fout.write('\n')
+        #print(time.time()-stim)
     print(f'Wrote report on {included} games to "{out_path}"')
 
 def a1csv(working_set, report_name):
