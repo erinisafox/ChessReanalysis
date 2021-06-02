@@ -157,7 +157,7 @@ def bca(array):
     #https://www.tau.ac.il/~saharon/Boot/10.1.1.133.8405.pdf for theory
     mean = sum(deltas)/len(deltas)
     z0 = invcdf(Gcdf(deltas, mean))
-    a = skewness(deltas, [1]*len(deltas))
+    a = skewness(sarray, larray) #use sampled distribution, not the bootstrap
     a1 = 0.025
     a2 = 0.975
     thetaa1 = invGcdf(deltas, cdf(z0 + (z0 + invcdf(a1))/(1-a*(z0+invcdf(a1)))))
