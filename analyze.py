@@ -112,7 +112,7 @@ def invcdf(phi): #bisection method
 # https://www.tau.ac.il/~saharon/Boot/10.1.1.133.8405.pdf for theory
 def bca(array):
     if len(array) < 2:
-        return ['-', '-']
+        return ['-','-']
     bssize = 20000-1 #19999 samples reproducibly gives upper and lower CIs +/-0.2
     deltas = [0]*bssize #bootstrap samples. deltas was the legacy name used for a reverse percentile method (not being used)
     sarray = [0]*len(array) #sum of CPLs in individual games
@@ -272,41 +272,41 @@ def t_output(fout, result):
 def t_output_csv(fout, result):
     #Commenting out lesser used stats to make it easier on the eyes
     if result.t1_total:
-        fout.write(f'{result.t1_count}/{result.t1_total},{result.t1_count / result.t1_total:.1%},')
+        fout.write(f'{generate_stats_string_csv(result.t1_count, result.t1_total)},')
     else:
-        fout.write(',,')
+        fout.write(',,,')
     if result.t2_total:
-        fout.write(f'{result.t2_count}/{result.t2_total},{result.t2_count / result.t2_total:.1%},')
+        fout.write(f'{generate_stats_string_csv(result.t2_count, result.t2_total)},')
     else:
-        fout.write(',,')
+        fout.write(',,,')
     if result.t3_total:
-        fout.write(f'{result.t3_count}/{result.t3_total},{result.t3_count / result.t3_total:.1%},')
+        fout.write(f'{generate_stats_string_csv(result.t3_count, result.t3_total)},')
     else:
-        fout.write(',,')
+        fout.write(',,,')
     #if result.wt1_total:
-    #    fout.write(f'{result.wt1_count}/{result.wt1_total},{result.wt1_count / result.wt1_total:.1%},')
+    #    fout.write(f'{generate_stats_string_csv(result.wt1_count, result.wt1_total)},')
     #else:
-    #    fout.write(',,')
+    #    fout.write(',,,')
     #if result.wt2_total:
-    #    fout.write(f'{result.wt2_count}/{result.wt2_total},{result.wt2_count / result.wt2_total:.1%},')
+    #    fout.write(f'{generate_stats_string_csv(result.wt2_count, result.wt2_total)},')
     #else:
-    #    fout.write('x,x,')
+    #    fout.write(',,,')
     #if result.wt3_total:
-    #    fout.write(f'{result.wt3_count}/{result.wt3_total},{result.wt3_count / result.wt3_total:.1%},')
+    #    fout.write(f'{generate_stats_string_csv(result.wt3_count, result.wt3_total)},')
     #else:
-    #    fout.write('x,x,')
+    #    fout.write(',,,')
     #if result.bt1_total:
-    #    fout.write(f'{result.bt1_count}/{result.bt1_total},{result.bt1_count / result.bt1_total:.1%},')
+    #    fout.write(f'{generate_stats_string_csv(result.bt1_count, result.bt1_total)},')
     #else:
-    #    fout.write('x,x,')
+    #    fout.write(',,,')
     #if result.bt2_total:
-    #    fout.write(f'{result.bt2_count}/{result.bt2_total},{result.bt2_count / result.bt2_total:.1%},')
+    #    fout.write(f'{generate_stats_string_csv(result.bt2_count, result.bt2_total)},')
     #else:
-    #    fout.write('x,x,')
+    #    fout.write(',,,')
     #if result.bt3_total:
-    #    fout.write(f'{result.bt3_count}/{result.bt3_total},{result.bt3_count / result.bt3_total:.1%},')
+    #    fout.write(f'{generate_stats_string_csv(result.bt3_count, result.bt3_total)},')
     #else:
-    #    fout.write('x,x,')
+    #    fout.write(',,,')
     if result.acpl:
         #Print ACPL calculated from average CPLs of moves
         fout.write(f'{result.acpl:.1f},{result.sample_size},{len(result.cp_loss_list_by_game)},{str(bca(result.cp_loss_list_by_game))},')
@@ -321,7 +321,7 @@ def t_output_csv(fout, result):
             fout.write(f'{stats_str},')
     else:
         for cp_loss_name in _cp_loss_names:
-            fout.write(f',,,,')
+            fout.write(',,,')
 
 def a1(working_set, report_name):
     p = load_a1_params()
@@ -347,7 +347,7 @@ def a1(working_set, report_name):
             fout.write(f'{player.username} ({result.min_rating} - {result.max_rating})\n')
             t_output(fout, result)
             fout.write(' '.join(result.game_list) + '\n')
-            fout.write('\n')
+            fout.write(str(len(result.game_list)) + ' games \n\n')
             
         #I've never looked at CR on a game-basis, and I don't think anyone ever should
         #fout.write('\n------ BY GAME ------\n\n')
@@ -380,11 +380,11 @@ def a1csv(working_set, report_name):
         cp_loss_name_string = ''
         for cp_loss_name in _cp_loss_names:
             cp_loss_name_string += f'CPL{cp_loss_name},CPL{cp_loss_name}%,CPL{cp_loss_name} CI,'
-        fout.write(f'Name,Rating range,T1:,T1%:,T2:,T2%:,T3:,T3%:,ACPL:,Positions,Games,LCI,UCI,{cp_loss_name_string}Games\n')
+        fout.write(f'Name,Rating min,Rating max,T1:,T1%:,T1 CI,T2:,T2%:,T2 CI,T3:,T3%:,T3 CI,ACPL,Positions,# Games,ACPL Lower CI,ACPL Upper CI,{cp_loss_name_string}# Games,Games\n')
         for player, result in sorted(by_player.items(), key=lambda i: i[1].t3_sort):
-            fout.write(f'{player.username},{result.min_rating} - {result.max_rating},')
+            fout.write(f'{player.username},{result.min_rating},{result.max_rating},')
             t_output_csv(fout, result)
-            fout.write(' '.join(result.game_list) + '\n')
+            fout.write(str(len(result.game_list)) + ',' + ' '.join(result.game_list) + '\n')
 
     print(f'Wrote report on {included} games to "{out_path}"')
 
